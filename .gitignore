@@ -1,0 +1,26 @@
+# Python virtual environment
+.venv/
+
+# Build outputs
+build/
+dist/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Database
+tracker.db
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# PyInstaller
+*.spec
