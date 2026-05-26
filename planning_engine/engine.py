@@ -41,6 +41,7 @@ class PlanningEngine:
         max_task_hours_per_day: float = 4.0,
         buffer_ratio: float = 0.10,
         max_tasks_per_day: int = 2,
+        check_prerequisites: bool = True,
     ):
         """
         Args:
@@ -50,6 +51,8 @@ class PlanningEngine:
             buffer_ratio: Reserve this fraction of each day as buffer (0.0-0.3).
             max_tasks_per_day: Max distinct tasks allocated per day (2 = alternate).
                 Set higher to allow more tasks on the same day; 0 = no limit.
+            check_prerequisites: If True, don't schedule task B before task A
+                completes when A is listed in B's prerequisites.
         """
         if not tasks:
             raise ValueError("At least one task is required")
@@ -61,6 +64,7 @@ class PlanningEngine:
         self.max_task_hours_per_day = max_task_hours_per_day
         self.buffer_ratio = max(0.0, min(0.3, buffer_ratio))
         self.max_tasks_per_day = max_tasks_per_day
+        self.check_prerequisites = check_prerequisites
         self.warnings: list[str] = []
 
     def plan(self) -> PlanResult:
@@ -100,6 +104,31 @@ class PlanningEngine:
         )
 
     # ── Internal methods ────────────────────────────────────────────
+
+    def _prerequisites_satisfied(
+        self,
+        task: Task,
+        progress: dict[str, "TaskProgress"],
+    ) -> bool:
+        """Check if all prerequisite tasks are complete."""
+        if not self.check_prerequisites or not task.prerequisites:
+            return True
+        for prereq_id in task.prerequisites:
+            if prereq_id in progress and progress[prereq_id].remaining > 0:
+                return False
+        return True
+
+    def build_schedule_summary(self) -> str:
+        """Build a human-readable summary of the schedule for rationale generation."""
+        lines = []
+        for day in self.days if hasattr(self, 'days') else []:
+            if not day.allocations:
+                continue
+            tasks_str = "; ".join(
+                f"{a.description} ({a.hours:.1f}h)" for a in day.allocations
+            )
+            lines.append(f"{day.date} ({day.day_of_week}): {tasks_str}")
+        return "\n".join(lines) if lines else "(no allocations yet)"
 
     def _check_feasibility(self):
         """Check if the plan is feasible given total demand and supply."""
@@ -193,8 +222,25 @@ class PlanningEngine:
                 available_hours=available_hours,
             )
 
-        # Filter: only tasks with remaining work
-        active_all = [t for t in remaining_tasks if t.total_amount > 0]
+        # Filter: only tasks with remaining work AND satisfied prerequisites
+        active_all = [
+            t for t in remaining_tasks
+            if t.total_amount > 0 and self._prerequisites_satisfied(t, progress)
+        ]
+
+        # Warn if any tasks are blocked by unsatisfied prerequisites
+        if self.check_prerequisites:
+            blocked = [
+                t for t in remaining_tasks
+                if t.total_amount > 0 and not self._prerequisites_satisfied(t, progress)
+            ]
+            for bt in blocked:
+                pending = [p for p in bt.prerequisites if p in progress and progress[p].remaining > 0]
+                if pending and not any(w.startswith(f"Task '{bt.id}' blocked") for w in self.warnings):
+                    self.warnings.append(
+                        f"Task '{bt.id}' ({bt.description}) is blocked — waiting for: "
+                        + ", ".join(f"'{p}'" for p in pending)
+                    )
 
         if not active_all:
             return DailyPlan(

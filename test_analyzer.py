@@ -8,6 +8,8 @@ Tests:
   4. Prompt building (system + user)
   5. LLMClient config resolution
   6. TaskAnalyzer error handling (empty text, missing key)
+  7. Milestone task with prerequisites and subtasks
+  8. Goal decomposition prompt building
 """
 
 import os
@@ -217,6 +219,111 @@ def test_analyzer_errors():
         print("  PASS — whitespace-only also raises ValueError")
 
 
+# ── Test 7: Milestone task with prerequisites and subtasks ──────────
+def test_milestone_task():
+    """Task supports milestone type with prerequisites and subtasks."""
+    from task_analyzer.models import Task
+
+    print("=" * 50)
+    print("Test 7: Milestone task with prerequisites and subtasks")
+
+    task = Task(
+        id="m1",
+        description="Learn C# fundamentals",
+        task_type="milestone",
+        total_amount=3,
+        unit="steps",
+        difficulty=3,
+        estimated_hours=15.0,
+        unit_efficiency=0.2,
+        efficiency_unit="steps_per_hour",
+        deadline=date(2026, 6, 10),
+        subtasks=[
+            {"id": "s1", "description": "Variables and types", "estimated_hours": 5, "order": 1},
+            {"id": "s2", "description": "OOP basics", "estimated_hours": 5, "order": 2},
+            {"id": "s3", "description": "LINQ and collections", "estimated_hours": 5, "order": 3},
+        ],
+        prerequisites=[],
+    )
+
+    assert task.is_milestone
+    assert len(task.subtasks) == 3
+    assert task.total_amount == 3  # subtask count
+
+    # Round-trip
+    d = task.to_dict()
+    assert d["task_type"] == "milestone"
+    assert len(d["subtasks"]) == 3
+    assert d["prerequisites"] == []
+
+    task2 = Task.from_dict(d)
+    assert task2.is_milestone
+    assert len(task2.subtasks) == 3
+    assert task2.subtasks[0]["description"] == "Variables and types"
+
+    # Task with prerequisites
+    task3 = Task(
+        id="m2",
+        description="Build Unity prototype",
+        task_type="milestone",
+        total_amount=4,
+        unit="steps",
+        difficulty=4,
+        estimated_hours=20.0,
+        unit_efficiency=0.2,
+        efficiency_unit="steps_per_hour",
+        prerequisites=["m1"],
+        subtasks=[
+            {"id": "s4", "description": "Set up project", "estimated_hours": 3, "order": 1},
+            {"id": "s5", "description": "Implement mechanics", "estimated_hours": 10, "order": 2},
+            {"id": "s6", "description": "Add UI", "estimated_hours": 4, "order": 3},
+            {"id": "s7", "description": "Test and polish", "estimated_hours": 3, "order": 4},
+        ],
+    )
+    assert task3.prerequisites == ["m1"]
+
+    d3 = task3.to_dict()
+    task3b = Task.from_dict(d3)
+    assert task3b.prerequisites == ["m1"]
+
+    print("  PASS — milestone task with prerequisites and subtasks OK")
+
+
+# ── Test 8: Goal decomposition prompt building ──────────────────────
+def test_goal_prompts():
+    """Goal decomposition and rationale prompts build correctly."""
+    from task_analyzer.prompts import (
+        build_goal_system_prompt,
+        build_goal_user_prompt,
+        build_rationale_system_prompt,
+        build_rationale_user_prompt,
+    )
+
+    print("=" * 50)
+    print("Test 8: Goal decomposition prompt building")
+
+    sys_prompt = build_goal_system_prompt("2026-05-26", "zh")
+    assert "2026-05-26" in sys_prompt
+    assert "Simplified Chinese" in sys_prompt
+    assert "milestone" in sys_prompt
+
+    user_prompt = build_goal_user_prompt("I want to learn Unity in one month.")
+    assert "Unity" in user_prompt
+
+    rationale_sys = build_rationale_system_prompt("en")
+    assert "English" in rationale_sys
+
+    rationale_user = build_rationale_user_prompt(
+        task_summaries="- t1: Task A",
+        schedule_summary="2026-05-26: Task A (2h)",
+        warnings=["Warning: tight deadline"],
+    )
+    assert "Task A" in rationale_user
+    assert "tight deadline" in rationale_user
+
+    print("  PASS — goal and rationale prompts build OK")
+
+
 # ── Run all ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     test_task_serialization()
@@ -225,5 +332,7 @@ if __name__ == "__main__":
     test_prompt_building()
     test_llm_client_config()
     test_analyzer_errors()
+    test_milestone_task()
+    test_goal_prompts()
     print("\n" + "=" * 50)
     print("All analyzer tests passed!")

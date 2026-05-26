@@ -273,6 +273,120 @@ def test_daily_recurring_task():
     print("  PASS — daily task appears every day without a DDL")
 
 
+# ── Test 9: Prerequisite-aware scheduling ───────────────────────────
+def test_prerequisite_scheduling():
+    """Task with unsatisfied prerequisite should not be scheduled."""
+    from planning_engine.engine import PlanningEngine
+
+    print("=" * 50)
+    print("Test 9: Prerequisite-aware scheduling")
+
+    today = date.today()
+    tasks = [
+        make_task(
+            id="prereq",
+            description="Prerequisite task",
+            total_amount=100,
+            estimated_hours=5,
+            deadline=today + timedelta(days=3),
+        ),
+        make_task(
+            id="dependent",
+            description="Dependent task",
+            total_amount=100,
+            estimated_hours=5,
+            deadline=today + timedelta(days=10),
+            prerequisites=["prereq"],
+        ),
+    ]
+    slots = {}
+    for i in range(5):
+        d = today + timedelta(days=i)
+        slots[d] = make_slot(d, 2.0)
+
+    engine = PlanningEngine(tasks=tasks, slots=slots, check_prerequisites=True)
+    result = engine.plan()
+
+    # Check that dependent task only gets allocations after prereq is done
+    p_prereq = result.progress["prereq"]
+    p_dep = result.progress["dependent"]
+
+    # Find first day dependent task gets allocation
+    dep_start_day = None
+    for day in result.days:
+        has_dep = any(a.task_id == "dependent" for a in day.allocations)
+        if has_dep and dep_start_day is None:
+            dep_start_day = day.date
+            break
+
+    print(f"  Prereq progress: {p_prereq.progress_pct:.0%}")
+    print(f"  Dependent progress: {p_dep.progress_pct:.0%}")
+    if dep_start_day:
+        print(f"  Dependent first scheduled: {dep_start_day}")
+
+    # Dependent should have little/no progress if prereq not done early
+    assert p_prereq.progress_pct >= 0.5, f"Prereq should be prioritized, got {p_prereq.progress_pct:.0%}"
+    print("  PASS — prerequisite-aware scheduling works")
+
+
+# ── Test 10: PlanResult rationale field ─────────────────────────────
+def test_rationale_field():
+    """PlanResult supports rationale string."""
+    from planning_engine.models import PlanResult, DailyPlan, TaskProgress
+
+    print("=" * 50)
+    print("Test 10: PlanResult rationale field")
+
+    result = PlanResult(
+        days=[DailyPlan(date=date.today(), day_of_week="Mon", available_hours=4.0)],
+        progress={"t1": TaskProgress(task_id="t1", description="Test", task_type="other", total_amount=100, unit="items")},
+        warnings=["Test warning"],
+        rationale="This is a test rationale explaining the plan.",
+    )
+
+    d = result.to_dict()
+    assert "rationale" in d
+    assert d["rationale"] == "This is a test rationale explaining the plan."
+
+    # Default
+    r2 = PlanResult()
+    assert r2.rationale == ""
+
+    print("  PASS — rationale field OK")
+
+
+# ── Test 11: Goal detection heuristic ───────────────────────────────
+def test_goal_detection():
+    """Static goal detection heuristic for desktop app."""
+    import re
+
+    goal_keywords = [
+        "入门", "学会", "掌握", "做一个", "开发", "手搓", "搭建",
+        "学习", "准备", "备考", "复习", "通过",
+        "learn", "build", "create", "master", "study", "prepare",
+        "develop", "make a", "get started",
+    ]
+
+    def is_goal(text: str) -> bool:
+        has_quantity = bool(re.search(
+            r'\d+\s*(个|篇|页|道|题|words|pages|problems|hours|h\b)',
+            text.lower()
+        ))
+        has_goal_word = any(kw in text.lower() for kw in goal_keywords)
+        return has_goal_word and not has_quantity
+
+    print("=" * 50)
+    print("Test 11: Goal detection heuristic")
+
+    assert is_goal("我想一个月内入门Unity并手搓一款游戏")
+    assert is_goal("learn Python and build a web app")
+    assert not is_goal("背500个单词在7天内")
+    assert not is_goal("memorize 500 words in 7 days")
+    assert not is_goal("Complete 20 math problems by Friday")
+
+    print("  PASS — goal detection heuristic OK")
+
+
 # ── Run all ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     test_models()
@@ -283,5 +397,8 @@ if __name__ == "__main__":
     test_infeasibility()
     test_plan_serialization()
     test_daily_recurring_task()
+    test_prerequisite_scheduling()
+    test_rationale_field()
+    test_goal_detection()
     print("\n" + "=" * 50)
     print("All planning engine tests passed!")

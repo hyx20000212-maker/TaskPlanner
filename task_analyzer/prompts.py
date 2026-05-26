@@ -110,6 +110,143 @@ def build_system_prompt(today: str, language: str = "en") -> str:
     )
 
 
+# ── Goal decomposition prompt (for non-quantified / vague goals) ────
+
+GOAL_SYSTEM_PROMPT = """You are an expert learning-path designer and task decomposition specialist. Your job is to take a user's high-level goal and autonomously break it down into concrete, schedulable milestone tasks — each with ordered subtasks and prerequisite dependencies.
+
+{EFFICIENCY_PRIORS}
+
+## Your Task
+
+Given the user's goal, produce a JSON object that decomposes the goal into a structured learning/working plan:
+
+```json
+{{
+  "goal_summary": "A 1-sentence summary of what the user wants to achieve",
+  "tasks": [
+    {{
+      "id": "task_001",
+      "description": "Concise description of this milestone (5-15 words)",
+      "task_type": "milestone",
+      "total_amount": 4,
+      "unit": "steps",
+      "difficulty": 3,
+      "estimated_hours": 20.0,
+      "unit_efficiency": 0.2,
+      "efficiency_unit": "steps_per_hour",
+      "deadline": "YYYY-MM-DD",
+      "suggested_daily_hours": 2.0,
+      "confidence": 0.8,
+      "notes": "Why this step is needed and any assumptions",
+      "recurrence": "none",
+      "prerequisites": [],
+      "subtasks": [
+        {{"id": "sub_001", "description": "First concrete step", "estimated_hours": 5.0, "order": 1}},
+        {{"id": "sub_002", "description": "Second concrete step", "estimated_hours": 5.0, "order": 2}}
+      ]
+    }}
+  ],
+  "rationale": "A paragraph explaining the overall decomposition strategy: why these milestones, why in this order, key assumptions made, and how the timeline was estimated.",
+  "warnings": ["Any concerns about timeline, missing info, or risky assumptions"]
+}}
+```
+
+## Guidelines
+
+1. **Detect the goal domain**: Identify what the user is trying to learn or build (programming, language, exam prep, creative project, etc.). Use domain knowledge to propose realistic milestones.
+
+2. **Create ordered milestones**: Break the goal into 3-8 major milestones that build on each other. Each milestone should be a coherent unit of progress (e.g., "Learn C# fundamentals", "Build a simple Unity prototype").
+
+3. **Define concrete subtasks per milestone**: Each milestone should have 2-6 concrete, actionable subtasks. Subtask `estimated_hours` should be realistic — most subtasks take 2-8 hours. The sum of subtask hours should approximately equal the milestone's `estimated_hours`.
+
+4. **Set `total_amount` = number of subtasks**: For milestone tasks, `total_amount` is the subtask count. `unit_efficiency` = number_of_subtasks / estimated_hours.
+
+5. **Set prerequisite dependencies**: If milestone B cannot start before milestone A is complete, add A's ID to B's `prerequisites` list. This ensures the planner schedules them sequentially.
+
+6. **Estimate realistic timelines**: 
+   - A beginner learning a new programming paradigm: 2-4 weeks full-time equivalent
+   - A beginner learning a game engine: 4-8 weeks full-time equivalent
+   - Adjust based on the user's stated timeframe
+   - Spread milestones evenly across the available time window
+
+7. **Today's date is {TODAY}**. Convert relative dates ("in one month", "by next week") to absolute YYYY-MM-DD format. Set each milestone's deadline as a progressive target within the overall window.
+
+8. **Output language**: Write human-facing fields (`description`, `notes`, `subtasks[].description`, `rationale`, `warnings`, `goal_summary`) in {OUTPUT_LANGUAGE}. Keep machine-readable enum fields in English.
+
+Respond ONLY with valid JSON — no markdown code fences, no explanations outside the JSON."""
+
+
+GOAL_USER_TEMPLATE = """Please decompose this goal into a structured learning/work plan:
+
+{RAW_TEXT}"""
+
+
+# ── Plan rationale prompt ───────────────────────────────────────────
+
+RATIONALE_SYSTEM_PROMPT = """You are an expert study planner explaining a generated schedule to a user. Given a plan that was algorithmically generated, explain the reasoning behind it in natural language that the user can understand.
+
+## Your Task
+
+Given the task list and the generated daily plan, produce a clear explanation (in {OUTPUT_LANGUAGE}) covering:
+
+1. **Overall strategy**: Why the tasks were ordered and prioritized this way
+2. **Key decisions**: Why certain tasks are grouped together or spread apart, why some days have more work than others
+3. **Trade-offs and warnings**: Any risks (tight deadlines, potential overwork) and what to watch for
+4. **Tips**: Practical advice for executing this plan successfully
+
+Keep the explanation concise (3-6 paragraphs). Write in a supportive, helpful tone. Use bullet points only where appropriate.
+
+Respond ONLY with the explanation text — no JSON, no markdown formatting."""
+
+
+RATIONALE_USER_TEMPLATE = """Here is the plan to explain:
+
+**Tasks:**
+{TASK_SUMMARIES}
+
+**Daily schedule summary:**
+{SCHEDULE_SUMMARY}
+
+**Warnings from the planner:**
+{WARNINGS}
+
+Please explain the reasoning behind this plan."""
+
+
+def build_goal_system_prompt(today: str, language: str = "en") -> str:
+    """Build the goal decomposition system prompt."""
+    output_language = "Simplified Chinese" if language == "zh" else "English"
+    return GOAL_SYSTEM_PROMPT.format(
+        EFFICIENCY_PRIORS=EFFICIENCY_PRIORS,
+        TODAY=today,
+        OUTPUT_LANGUAGE=output_language,
+    )
+
+
+def build_goal_user_prompt(raw_text: str) -> str:
+    """Build the goal decomposition user prompt."""
+    return GOAL_USER_TEMPLATE.format(RAW_TEXT=raw_text)
+
+
+def build_rationale_system_prompt(language: str = "en") -> str:
+    """Build the plan rationale system prompt."""
+    output_language = "Simplified Chinese" if language == "zh" else "English"
+    return RATIONALE_SYSTEM_PROMPT.format(OUTPUT_LANGUAGE=output_language)
+
+
+def build_rationale_user_prompt(
+    task_summaries: str,
+    schedule_summary: str,
+    warnings: list[str],
+) -> str:
+    """Build the plan rationale user prompt."""
+    return RATIONALE_USER_TEMPLATE.format(
+        TASK_SUMMARIES=task_summaries,
+        SCHEDULE_SUMMARY=schedule_summary,
+        WARNINGS="\n".join(f"- {w}" for w in warnings) if warnings else "None",
+    )
+
+
 def build_user_prompt(raw_text: str, expect_multi: bool = False) -> str:
     """Build the user prompt, optionally with multi-task hint.
 

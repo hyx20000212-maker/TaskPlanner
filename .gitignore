@@ -24,3 +24,6 @@ Thumbs.db
 
 # PyInstaller
 *.spec
+
+# Notebooks
+*.ipynb

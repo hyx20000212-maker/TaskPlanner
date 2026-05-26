@@ -1,9 +1,10 @@
 # Document Parser Module Dependencies
 PyMuPDF==1.24.14       # PDF parsing (fitz)
 python-docx==1.1.2     # Word .docx parsing
-streamlit>=1.42        # Web UI framework
 openai>=1.50           # LLM API client (DeepSeek / OpenAI compatible)
 requests>=2.32         # Holiday API requests
 pystray>=0.19          # Desktop system tray MVP
 Pillow>=10             # Tray icon drawing for desktop MVP
 pyinstaller>=6.10      # Build desktop executable
+sqlite3                # Built-in — tracker database persistence
+tkinter                # Built-in — desktop UI toolkit

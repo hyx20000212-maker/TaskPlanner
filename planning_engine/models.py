@@ -98,7 +98,8 @@ class PlanResult:
     days: list[DailyPlan] = field(default_factory=list)
     progress: dict[str, TaskProgress] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
-    
+    rationale: str = ""                 # Natural-language explanation of the plan
+
     @property
     def total_planned_hours(self) -> float:
         return sum(d.total_allocated_hours for d in self.days)
@@ -114,4 +115,5 @@ class PlanResult:
             "days": [d.to_dict() for d in self.days],
             "progress": {k: v.to_dict() for k, v in self.progress.items()},
             "warnings": self.warnings,
+            "rationale": self.rationale,
         }

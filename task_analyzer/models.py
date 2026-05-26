@@ -53,12 +53,18 @@ def _normalize_efficiency(data: dict) -> tuple[float, str]:
 
 @dataclass
 class Task:
-    """A single analyzed task with structured metadata."""
+    """A single analyzed task with structured metadata.
+
+    Supports three paradigms:
+      - quantified:   total_amount=500, unit="words" → progress = completed/total
+      - milestone:    task_type="milestone", subtasks=[...] → progress = done_steps/total_steps
+      - daily:        recurrence="daily" → repeats every day
+    """
     id: str                              # Unique task ID (e.g. "task_001")
     description: str                     # Short description of the task
-    task_type: str                       # memorize / exercise / reading / writing / project / other
-    total_amount: float                  # Total quantity (e.g. 500)
-    unit: str                            # Unit of measure (e.g. "words", "problems", "pages")
+    task_type: str                       # memorize / exercise / reading / writing / project / milestone / other
+    total_amount: float                  # Total quantity (e.g. 500) or subtask count for milestones
+    unit: str                            # Unit of measure (e.g. "words", "problems", "pages", "steps")
     difficulty: int                      # Difficulty level 1-5
     estimated_hours: float               # Estimated total hours to complete
     unit_efficiency: float               # Amount completed per hour
@@ -68,10 +74,16 @@ class Task:
     confidence: float = 0.5              # LLM confidence 0.0 - 1.0
     notes: str = ""                      # Additional notes or warnings
     recurrence: str = "none"             # none / daily
+    prerequisites: list = field(default_factory=list)   # Task IDs that must complete before this one
+    subtasks: list = field(default_factory=list)        # Milestone subtasks: [{"id":"s1","description":"...","estimated_hours":5,"order":1}]
 
     @property
     def is_daily_recurring(self) -> bool:
         return self.recurrence == "daily"
+
+    @property
+    def is_milestone(self) -> bool:
+        return self.task_type == "milestone"
 
     @property
     def days_until_deadline(self) -> Optional[int]:
@@ -104,6 +116,8 @@ class Task:
             "confidence": self.confidence,
             "notes": self.notes,
             "recurrence": self.recurrence,
+            "prerequisites": self.prerequisites,
+            "subtasks": self.subtasks,
         }
 
     @classmethod
@@ -129,6 +143,8 @@ class Task:
             confidence=_to_float(data.get("confidence", 0.5), 0.5),
             notes=data.get("notes", ""),
             recurrence=recurrence,
+            prerequisites=data.get("prerequisites", []),
+            subtasks=data.get("subtasks", []),
         )
 
 

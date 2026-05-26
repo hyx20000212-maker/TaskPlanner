@@ -32,7 +32,7 @@ from planning_engine.models import PlanResult
 from planning_engine import PlanningEngine
 from schedule_engine import ScheduleEngine, UserSettings
 from schedule_engine.models import DailySlot
-from task_analyzer import TaskAnalyzer
+from task_analyzer import TaskAnalyzer, decompose_goal, generate_plan_rationale
 from task_analyzer.models import Task
 
 
@@ -79,6 +79,9 @@ DESKTOP_TEXT = {
         "yesterday_review": "昨日回顾",
         "progress_review": "当前进度",
         "no_review": "暂无可回顾内容。",
+        "view_ai_rationale": "查看 AI 分析",
+        "no_rationale": "暂无 AI 分析记录。",
+        "ai_analysis_title": "AI 规划分析",
         "opacity": "透明度",
         "language": "语言",
         "zh": "中文",
@@ -144,6 +147,9 @@ DESKTOP_TEXT = {
         "yesterday_review": "Yesterday",
         "progress_review": "Progress",
         "no_review": "Nothing to review yet.",
+        "view_ai_rationale": "View AI Analysis",
+        "no_rationale": "No AI analysis record.",
+        "ai_analysis_title": "AI Plan Analysis",
         "opacity": "Opacity",
         "language": "Language",
         "zh": "中文",
@@ -980,7 +986,7 @@ class StickyWindow:
         window = tk.Toplevel(self.root)
         self.review_window = window
         window.title(tr(self.db_path, "review"))
-        window.geometry("420x360+520+180")
+        window.geometry("420x410+520+180")
         window.configure(bg=COLORS["paper"])
         window.attributes("-topmost", True)
         self.prepare_modal_window(window, self.get_modal_parent())
@@ -1005,7 +1011,25 @@ class StickyWindow:
             anchor="nw",
             wraplength=380,
             font=("Microsoft YaHei UI", 10),
-        ).pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        ).pack(fill="both", expand=True, padx=14, pady=(0, 8))
+
+        # ── "View AI Analysis" button ────────────────────────────
+        def show_rationale():
+            rationale = self._load_rationale()
+            if rationale:
+                self._show_rationale(rationale, parent=window)
+            else:
+                messagebox.showinfo(
+                    tr(self.db_path, "ai_analysis_title"),
+                    tr(self.db_path, "no_rationale"),
+                    parent=window,
+                )
+
+        styled_button(
+            window,
+            text=tr(self.db_path, "view_ai_rationale"),
+            command=show_rationale,
+        ).pack(fill="x", padx=14, pady=(0, 10))
 
     def open_settings(self):
         if self.settings_window and self.settings_window.winfo_exists():
@@ -1071,6 +1095,7 @@ class StickyWindow:
             return
 
         workday, weekend, holiday = get_schedule_hours(self.db_path)
+        lang = get_language(self.db_path)
 
         try:
             if file_path:
@@ -1083,14 +1108,33 @@ class StickyWindow:
 
             existing_tasks, existing_slots = load_plan_snapshot(self.db_path)
             existing_context = build_existing_tasks_context(existing_tasks)
-            if existing_context:
-                analyze_input = f"{existing_context}\n\nUser's new request to turn into schedulable tasks:\n{analyze_input}"
 
             status_var.set(tr(self.db_path, "analyzing"))
             self.root.update_idletasks()
             provider = "deepseek" if os.environ.get("DEEPSEEK_API_KEY") else "openai"
-            analyzer = TaskAnalyzer(api_key=api_key, provider=provider)
-            new_tasks = analyzer.analyze(analyze_input, language=get_language(self.db_path)).tasks
+
+            # ── Detect goal vs. quantified task ────────────────────
+            is_goal = self._is_goal_input(analyze_input)
+
+            if is_goal:
+                full_input = analyze_input
+                if existing_context:
+                    full_input = f"{existing_context}\n\nUser's new goal:\n{analyze_input}"
+                result = decompose_goal(full_input, api_key=api_key, provider=provider, language=lang)
+                new_tasks = result.get("tasks", [])
+                goal_rationale = result.get("rationale", "")
+            else:
+                full_input = analyze_input
+                if existing_context:
+                    full_input = f"{existing_context}\n\nUser's new request to turn into schedulable tasks:\n{analyze_input}"
+                analyzer = TaskAnalyzer(api_key=api_key, provider=provider)
+                analysis = analyzer.analyze(full_input, language=lang)
+                new_tasks = analysis.tasks
+                goal_rationale = ""
+
+            if not new_tasks:
+                status_var.set(tr(self.db_path, "failed", error="No tasks extracted"))
+                return
 
             if existing_tasks and existing_slots:
                 merged = apply_soft_deadlines(merge_tasks(existing_tasks, new_tasks))
@@ -1103,14 +1147,125 @@ class StickyWindow:
                 action = tr(self.db_path, "created")
 
             plan = build_plan(merged, slots)
+
+            # ── Generate plan rationale via LLM ────────────────────
+            schedule_text = self._summarize_plan(plan)
+            try:
+                plan.rationale = generate_plan_rationale(
+                    tasks=merged,
+                    schedule_summary=schedule_text,
+                    warnings=plan.warnings,
+                    api_key=api_key,
+                    provider=provider,
+                    language=lang,
+                )
+            except Exception:
+                plan.rationale = goal_rationale or ""
+
             save_plan_snapshot(self.db_path, merged, slots, plan)
             set_schedule_hours(self.db_path, workday, weekend, holiday)
             clear_today_checkin_state(self.db_path, self.tracker.today)
             status_var.set(tr(self.db_path, "done", action=action, count=len(new_tasks)))
             self.refresh()
             self.render_manage_tasks()
+
+            # ── Show rationale popup ───────────────────────────────
+            if plan.rationale:
+                self._show_rationale(plan.rationale)
         except Exception as exc:
             status_var.set(tr(self.db_path, "failed", error=exc))
+
+    @staticmethod
+    def _is_goal_input(text: str) -> bool:
+        """Heuristic: detect if input is a vague goal vs a quantified task."""
+        import re
+        # Goal-like keywords (CN + EN)
+        goal_keywords = [
+            "入门", "学会", "掌握", "做一个", "开发", "手搓", "搭建",
+            "学习", "准备", "备考", "复习", "通过",
+            "learn", "build", "create", "master", "study", "prepare",
+            "develop", "make a", "get started",
+        ]
+        # If text has clear quantities, treat as task
+        has_quantity = bool(re.search(r'\d+\s*(个|篇|页|道|题|words|pages|problems|hours|h\b)', text.lower()))
+        has_goal_word = any(kw in text.lower() for kw in goal_keywords)
+        # Treat as goal if it has goal words and no clear quantities
+        return has_goal_word and not has_quantity
+
+    @staticmethod
+    def _summarize_plan(plan: PlanResult) -> str:
+        """Build a text summary of the daily plan for rationale generation."""
+        lines = []
+        for day in plan.days:
+            if not day.allocations:
+                continue
+            tasks_str = "; ".join(
+                f"{a.description} ({a.hours:.1f}h)" for a in day.allocations
+            )
+            lines.append(f"{day.date} ({day.day_of_week}): {tasks_str}")
+        if not lines:
+            return "No allocations in the plan."
+        return "\n".join(lines[:14])  # Limit to avoid token overflow
+
+    def _show_rationale(self, text: str, parent: tk.Toplevel | None = None):
+        """Display the planning rationale in a popup window."""
+        window = tk.Toplevel(self.root)
+        window.title("AI Plan Explanation")
+        window.geometry("480x400+560+200")
+        window.configure(bg=COLORS["paper"])
+        window.attributes("-topmost", True)
+        self.prepare_modal_window(window, parent or self.get_modal_parent())
+
+        tk.Label(
+            window,
+            text="Plan Reasoning",
+            bg=COLORS["paper"],
+            fg=COLORS["ink"],
+            font=("Microsoft YaHei UI", 16, "bold"),
+        ).pack(anchor="w", padx=14, pady=(12, 8))
+
+        frame = tk.Frame(window, bg=COLORS["paper"])
+        frame.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+
+        text_widget = tk.Text(
+            frame,
+            wrap="word",
+            bg=COLORS["card"],
+            fg=COLORS["ink"],
+            font=("Microsoft YaHei UI", 10),
+            relief="flat",
+            borderwidth=0,
+        )
+        text_widget.insert("1.0", text)
+        text_widget.configure(state="disabled")
+        text_widget.pack(fill="both", expand=True)
+
+        styled_button(
+            window,
+            text="OK",
+            command=lambda: self.close_modal_window(window),
+        ).pack(fill="x", padx=14, pady=(0, 14))
+
+    def _load_rationale(self) -> str:
+        """Load the plan rationale from the saved plan snapshot."""
+        if not self.db_path.exists():
+            return ""
+        conn = _connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT value FROM user_settings WHERE key = ?",
+                ("plan_snapshot",),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return ""
+        try:
+            data = json.loads(row["value"])
+            plan_json = data.get("plan_json", {})
+            return plan_json.get("rationale", "")
+        except (json.JSONDecodeError, KeyError):
+            return ""
 
     def render(self):
         self.root.title(tr(self.db_path, "title"))
@@ -1189,7 +1344,6 @@ class StickyWindow:
             window_id = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
             canvas.configure(yscrollcommand=scrollbar.set)
             canvas.pack(side="left", fill="x", expand=True)
-            scrollbar.pack(side="right", fill="y")
             self.task_canvas = canvas
 
             def update_scroll_region(_event=None):
@@ -1205,10 +1359,14 @@ class StickyWindow:
                 self._render_task_card(scroll_frame, item)
 
             self.root.update_idletasks()
-            max_body_height = max(180, min(780, self.root.winfo_screenheight() - 260))
-            body_height = min(max_body_height, max(120, scroll_frame.winfo_reqheight()))
+            # ── Fixed height: show 2 cards, scroll if more ─────────
+            card_count = len(self.state.tasks)
+            fixed_card_height = 110
+            body_height = min(card_count, 2) * fixed_card_height + 8
             canvas.configure(height=body_height)
-            if scroll_frame.winfo_reqheight() <= body_height:
+            if card_count > 2:
+                scrollbar.pack(side="right", fill="y")
+            else:
                 scrollbar.pack_forget()
 
             done = sum(1 for item in self.state.tasks if item.selected_tier)
@@ -1301,6 +1459,9 @@ class StickyWindow:
 
     def _start_drag(self, event):
         if self.is_pinned:
+            return
+        # Skip if click was on a button (Settings, Pin, Refresh, Review, etc.)
+        if isinstance(event.widget, tk.Button):
             return
         self.drag_x = event.x
         self.drag_y = event.y
