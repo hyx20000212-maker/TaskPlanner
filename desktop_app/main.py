@@ -496,7 +496,6 @@ class StickyWindow:
         self.tray = None
         self.drag_x = 0
         self.drag_y = 0
-        self.drag_active = False
         self.is_pinned = False
         self.locked_geometry: str | None = None
         self.restoring_geometry = False
@@ -510,8 +509,6 @@ class StickyWindow:
         self.root.attributes("-topmost", True)
         self.root.protocol("WM_DELETE_WINDOW", self.close_app)
 
-        self.root.bind("<ButtonPress-1>", self._start_drag)
-        self.root.bind("<B1-Motion>", self._drag)
         self.root.bind("<Configure>", self._restore_pinned_geometry)
         self.root.bind("<Enter>", self._handle_mouse_enter)
         self.root.bind("<Leave>", self._handle_mouse_leave)
@@ -1267,6 +1264,9 @@ class StickyWindow:
 
         header = tk.Frame(self.root, bg=COLORS["paper"])
         header.pack(fill="x", padx=12, pady=(10, 4))
+        # ── Drag window by header (title-bar style) ───────────────
+        header.bind("<ButtonPress-1>", self._start_drag)
+        header.bind("<B1-Motion>", self._drag)
 
         greeting_label = tk.Label(
             header,
@@ -1276,6 +1276,8 @@ class StickyWindow:
             font=("Microsoft YaHei UI", 11, "bold"),
         )
         greeting_label.pack(side="left")
+        greeting_label.bind("<ButtonPress-1>", self._start_drag)
+        greeting_label.bind("<B1-Motion>", self._drag)
 
         date_label = tk.Label(
             header,
@@ -1285,6 +1287,8 @@ class StickyWindow:
             font=("Microsoft YaHei UI", 9, "bold"),
         )
         date_label.pack(side="left", padx=(8, 0))
+        date_label.bind("<ButtonPress-1>", self._start_drag)
+        date_label.bind("<B1-Motion>", self._drag)
 
         pin_char = "📌" if self.is_pinned else "📍"
         pin_btn = tk.Button(
@@ -1455,16 +1459,12 @@ class StickyWindow:
     def _start_drag(self, event):
         if self.is_pinned:
             return
-        # Skip if click was on a button (Settings, Pin, Refresh, Review, etc.)
-        if isinstance(event.widget, tk.Button):
-            self.drag_active = False
-            return
-        self.drag_active = True
+        # Drag only from header area — buttons/settings already excluded
         self.drag_x = event.x
         self.drag_y = event.y
 
     def _drag(self, event):
-        if self.is_pinned or not self.drag_active:
+        if self.is_pinned:
             return
         x = self.root.winfo_pointerx() - self.drag_x
         y = self.root.winfo_pointery() - self.drag_y
