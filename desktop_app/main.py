@@ -1169,19 +1169,20 @@ class StickyWindow:
 
     @staticmethod
     def _is_goal_input(text: str) -> bool:
-        """Heuristic: detect if input is a vague goal vs a quantified task."""
+        """Heuristic: detect if input is a vague goal vs a quantified task or short chore."""
         import re
-        # Goal-like keywords (CN + EN)
         goal_keywords = [
             "入门", "学会", "掌握", "做一个", "开发", "手搓", "搭建",
             "学习", "准备", "备考", "复习", "通过",
             "learn", "build", "create", "master", "study", "prepare",
             "develop", "make a", "get started",
         ]
-        # If text has clear quantities, treat as task
-        has_quantity = bool(re.search(r'\d+\s*(个|篇|页|道|题|words|pages|problems|hours|h\b)', text.lower()))
+        has_quantity = bool(re.search(
+            r'\d+\s*(个|篇|页|道|题|m|米|公里|km|words|pages|problems|hours|h\b)',
+            text.lower()
+        ))
+        # Very short inputs (<=8 words) with no goal keywords are chores / simple tasks
         has_goal_word = any(kw in text.lower() for kw in goal_keywords)
-        # Treat as goal if it has goal words and no clear quantities
         return has_goal_word and not has_quantity
 
     @staticmethod

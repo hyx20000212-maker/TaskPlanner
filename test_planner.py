@@ -387,6 +387,78 @@ def test_goal_detection():
     print("  PASS — goal detection heuristic OK")
 
 
+# ── Test 12: start_date blocks early allocation ─────────────────────
+def test_start_date():
+    """Tasks with start_date should not be allocated before that date."""
+    from planning_engine.engine import PlanningEngine
+
+    print("=" * 50)
+    print("Test 12: start_date blocks early allocation")
+
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    tasks = [
+        make_task(
+            id="t1",
+            description="Run 1000m tomorrow",
+            total_amount=1000,
+            estimated_hours=0.15,
+            unit_efficiency=6667,
+            deadline=tomorrow,
+            start_date=tomorrow,
+        ),
+    ]
+    slots = {today + timedelta(days=i): make_slot(today + timedelta(days=i), 3.0) for i in range(3)}
+
+    engine = PlanningEngine(tasks=tasks, slots=slots)
+    result = engine.plan()
+
+    today_plan = result.days[0]
+    assert not today_plan.allocations, f"Task allocated on {today} but start_date is {tomorrow}"
+    tomorrow_plan = result.days[1]
+    allocated = any(a.task_id == "t1" for a in tomorrow_plan.allocations)
+    assert allocated, f"Task NOT allocated on {tomorrow}"
+
+    print("  PASS — start_date prevents early allocation")
+
+
+# ── Test 13: chore tasks are scheduled ──────────────────────────────
+def test_chore_scheduling():
+    """Chore tasks (task_type='chore') should be scheduled normally."""
+    from planning_engine.engine import PlanningEngine
+
+    print("=" * 50)
+    print("Test 13: Chore task scheduling")
+
+    today = date.today()
+    tasks = [
+        make_task(
+            id="chore1",
+            description="Brush teeth",
+            task_type="chore",
+            total_amount=0.1,
+            unit="hours",
+            estimated_hours=0.1,
+            unit_efficiency=1.0,
+            efficiency_unit="hours_per_hour",
+            deadline=today,
+        ),
+    ]
+    slots = {today: make_slot(today, 3.0)}
+
+    engine = PlanningEngine(tasks=tasks, slots=slots)
+    result = engine.plan()
+
+    assert result.day_count == 1
+    day = result.days[0]
+    assert day.allocations, "Chore task was not allocated"
+    chore_alloc = day.allocations[0]
+    print(f"  Chore allocated: {chore_alloc.amount:.2f} {chore_alloc.unit} ({chore_alloc.hours:.2f}h)")
+
+    print("  PASS — chore task is scheduled correctly")
+
+
 # ── Run all ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     test_models()
@@ -400,5 +472,7 @@ if __name__ == "__main__":
     test_prerequisite_scheduling()
     test_rationale_field()
     test_goal_detection()
+    test_start_date()
+    test_chore_scheduling()
     print("\n" + "=" * 50)
     print("All planning engine tests passed!")

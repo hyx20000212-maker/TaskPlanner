@@ -57,19 +57,21 @@ class Task:
 
     Supports three paradigms:
       - quantified:   total_amount=500, unit="words" → progress = completed/total
+      - chore:        task_type="chore", total_amount=estimated_hours, unit="hours" → progress = completed/total
       - milestone:    task_type="milestone", subtasks=[...] → progress = done_steps/total_steps
       - daily:        recurrence="daily" → repeats every day
     """
     id: str                              # Unique task ID (e.g. "task_001")
     description: str                     # Short description of the task
-    task_type: str                       # memorize / exercise / reading / writing / project / milestone / other
-    total_amount: float                  # Total quantity (e.g. 500) or subtask count for milestones
-    unit: str                            # Unit of measure (e.g. "words", "problems", "pages", "steps")
+    task_type: str                       # memorize / exercise / reading / writing / project / chore / milestone / other
+    total_amount: float                  # Total quantity (e.g. 500), 0 for chores
+    unit: str                            # Unit of measure (e.g. "words", "problems", "pages", "steps", "time")
     difficulty: int                      # Difficulty level 1-5
     estimated_hours: float               # Estimated total hours to complete
-    unit_efficiency: float               # Amount completed per hour
+    unit_efficiency: float               # Amount completed per hour, 0 for chores
     efficiency_unit: str                 # e.g. "words_per_hour", "problems_per_hour"
     deadline: Optional[date] = None      # Deadline date
+    start_date: Optional[date] = None    # Don't schedule before this date
     suggested_daily_hours: float = 0.0   # Suggested hours per day
     confidence: float = 0.5              # LLM confidence 0.0 - 1.0
     notes: str = ""                      # Additional notes or warnings
@@ -84,6 +86,11 @@ class Task:
     @property
     def is_milestone(self) -> bool:
         return self.task_type == "milestone"
+
+    @property
+    def is_chore(self) -> bool:
+        """Non-quantified one-off task (e.g. brushing teeth, grocery shopping)."""
+        return self.task_type == "chore"
 
     @property
     def days_until_deadline(self) -> Optional[int]:
@@ -112,6 +119,7 @@ class Task:
             "unit_efficiency": self.unit_efficiency,
             "efficiency_unit": self.efficiency_unit,
             "deadline": self.deadline.isoformat() if self.deadline else None,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
             "suggested_daily_hours": self.suggested_daily_hours,
             "confidence": self.confidence,
             "notes": self.notes,
@@ -125,6 +133,9 @@ class Task:
         deadline = data.get("deadline")
         if deadline and isinstance(deadline, str):
             deadline = date.fromisoformat(deadline)
+        start_date = data.get("start_date")
+        if start_date and isinstance(start_date, str):
+            start_date = date.fromisoformat(start_date)
         unit_efficiency, efficiency_unit = _normalize_efficiency(data)
         recurrence = data.get("recurrence", "none")
         recurrence = recurrence if recurrence in ("none", "daily") else "none"
@@ -139,6 +150,7 @@ class Task:
             unit_efficiency=unit_efficiency,
             efficiency_unit=efficiency_unit,
             deadline=deadline,
+            start_date=start_date,
             suggested_daily_hours=_to_float(data.get("suggested_daily_hours", 0)),
             confidence=_to_float(data.get("confidence", 0.5), 0.5),
             notes=data.get("notes", ""),

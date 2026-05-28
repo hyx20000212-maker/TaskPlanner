@@ -289,6 +289,80 @@ def test_milestone_task():
     print("  PASS — milestone task with prerequisites and subtasks OK")
 
 
+# ── Test 8: Task start_date field ─────────────────────────────────
+def test_start_date():
+    """Task start_date restricts scheduling to on/after that date."""
+    from task_analyzer.models import Task
+
+    print("=" * 50)
+    print("Test 8.b: Task start_date field")
+
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    # Task scheduled for a specific day
+    task = Task(
+        id="t1",
+        description="Run 1000m",
+        task_type="exercise",
+        total_amount=1000,
+        unit="meters",
+        difficulty=2,
+        estimated_hours=0.15,
+        unit_efficiency=6667,
+        efficiency_unit="meters_per_hour",
+        deadline=tomorrow,
+        start_date=tomorrow,
+    )
+    d = task.to_dict()
+    assert d["start_date"] == tomorrow.isoformat()
+    assert d["deadline"] == tomorrow.isoformat()
+
+    task2 = Task.from_dict(d)
+    assert task2.start_date == tomorrow
+    assert task2.deadline == tomorrow
+
+    # Task with no start_date (default)
+    task3 = Task(id="t2", description="No start", task_type="other",
+                 total_amount=10, unit="items", difficulty=1,
+                 estimated_hours=1, unit_efficiency=10, efficiency_unit="items_per_hour")
+    d3 = task3.to_dict()
+    assert d3["start_date"] is None
+
+    print("  PASS — start_date field round-trips correctly")
+
+
+# ── Test 9: Chore task type ─────────────────────────────────────────
+def test_chore_task():
+    """Chore tasks have task_type='chore', total_amount=estimated_hours."""
+    from task_analyzer.models import Task
+
+    print("=" * 50)
+    print("Test 9: Chore task type")
+
+    # Chore: brush teeth (0.1h = 6 min)
+    chore = Task(
+        id="c1",
+        description="Brush teeth",
+        task_type="chore",
+        total_amount=0.1,
+        unit="hours",
+        difficulty=1,
+        estimated_hours=0.1,
+        unit_efficiency=1.0,
+        efficiency_unit="hours_per_hour",
+    )
+    assert chore.is_chore
+    assert chore.estimated_hours == 0.1
+
+    d = chore.to_dict()
+    chore2 = Task.from_dict(d)
+    assert chore2.is_chore
+    assert chore2.total_amount == 0.1
+
+    print("  PASS — chore task supports non-quantified short tasks")
+
+
 # ── Test 8: Goal decomposition prompt building ──────────────────────
 def test_goal_prompts():
     """Goal decomposition and rationale prompts build correctly."""
@@ -333,6 +407,8 @@ if __name__ == "__main__":
     test_llm_client_config()
     test_analyzer_errors()
     test_milestone_task()
+    test_start_date()
+    test_chore_task()
     test_goal_prompts()
     print("\n" + "=" * 50)
     print("All analyzer tests passed!")

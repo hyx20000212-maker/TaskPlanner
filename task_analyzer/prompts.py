@@ -15,10 +15,12 @@ EFFICIENCY_PRIORS = """
 | exercise    | 6-8 problems/h| 3-5 problems/h    | 1-2 problems/h  |
 | reading     | 40-60 pages/h | 25-40 pages/h     | 10-25 pages/h   |
 | writing     | 500-800 words/h| 300-500 words/h  | 100-300 words/h |
+| chore       | (short fixed-duration tasks, typically 5-60 min)          |
 | project     | (varies widely — estimate based on description)           |
 | other       | (estimate based on description)                           |
 
 Note: For memorization tasks (e.g., vocabulary), include review/revision time.
+Note: For exercise/physical tasks (running, swimming), estimate duration directly — 1000m run ≈ 0.1-0.15h, 5km run ≈ 0.4-0.6h.
 """
 
 # ── System prompt ───────────────────────────────────────────────────
@@ -37,14 +39,15 @@ Given the user's task description, produce a JSON object with the following stru
     {{
       "id": "task_001",
       "description": "A concise 5-15 word description of the task",
-      "task_type": "one of: memorize, exercise, reading, writing, project, other",
+      "task_type": "one of: memorize, exercise, reading, writing, chore, project, other",
       "total_amount": 500,
-      "unit": "words / problems / pages / items / hours",
+      "unit": "words / problems / pages / meters / items / time",
       "difficulty": 3,
       "estimated_hours": 25.0,
       "unit_efficiency": 20.0,
       "efficiency_unit": "words_per_hour / problems_per_hour / pages_per_hour",
       "deadline": "YYYY-MM-DD or null if not specified",
+      "start_date": "YYYY-MM-DD or null",
       "suggested_daily_hours": 3.5,
       "confidence": 0.8,
       "notes": "Any relevant observations, assumptions made, or warnings",
@@ -57,7 +60,13 @@ Given the user's task description, produce a JSON object with the following stru
 
 ## Guidelines
 
-1. **Extract deadline carefully**: Look for phrases like "in 7 days", "by next Friday", "due May 26", "两周内提交", "DDL: 5月26日". Convert relative dates to absolute dates assuming TODAY is {TODAY}. If no deadline is mentioned, set it to null and add a warning unless this is a daily recurring routine.
+1. **Extract deadline and start_date carefully**: 
+   - "明天做X / 明天给我安排X / schedule X for tomorrow": set `start_date` = tomorrow AND `deadline` = tomorrow. This means the task should ONLY be scheduled on that specific day, not today.
+   - "在X号之前完成 / by Friday / DDL: 5月26日": set `deadline` to that date, leave `start_date` as null. The task can be worked on any day from now until the deadline.
+   - "下周开始X / start next week": set `start_date` to next Monday, leave `deadline` as null or as stated.
+   - Convert relative dates (明天, 后天, 下周, 周末, next week, tomorrow, next month) to absolute dates assuming TODAY is {TODAY}.
+
+1a. **Non-quantified chore tasks**: If the user mentions a brief one-off task that has no natural quantity — e.g. "刷牙" (brush teeth), "洗脸" (wash face), "买菜" (grocery shopping), "倒垃圾" (take out trash) — set `task_type` = "chore", `total_amount` = `estimated_hours` (so e.g. 0.15 for a 9-min task), `unit` = "hours", `unit_efficiency` = 1.0. Estimate `estimated_hours` directly (chores are typically 0.1-1.0h). Set `start_date` and `deadline` based on the user's time words if any.
 
 2. **Estimate total hours**: Based on the efficiency table above, the difficulty level you judge, and the total amount. Be conservative — it's better to overestimate slightly than underestimate.
 

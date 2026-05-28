@@ -222,10 +222,12 @@ class PlanningEngine:
                 available_hours=available_hours,
             )
 
-        # Filter: only tasks with remaining work AND satisfied prerequisites
+        # Filter: only tasks with remaining work AND satisfied prerequisites AND reached start_date
         active_all = [
             t for t in remaining_tasks
-            if t.total_amount > 0 and self._prerequisites_satisfied(t, progress)
+            if t.total_amount > 0
+            and self._prerequisites_satisfied(t, progress)
+            and (t.start_date is None or date >= t.start_date)
         ]
 
         # Warn if any tasks are blocked by unsatisfied prerequisites
