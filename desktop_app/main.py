@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw
 import pystray
 
 from daily_tracker import DailyTracker
@@ -279,15 +279,7 @@ def styled_button(parent: tk.Widget, text: str, command, **kwargs) -> tk.Button:
     )
 
 
-def make_pin_photo(pinned: bool = False) -> ImageTk.PhotoImage:
-    image = Image.new("RGBA", (22, 22), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    color = (80, 70, 25, 255) if pinned else (130, 116, 45, 255)
-    draw.ellipse((7, 2, 15, 10), fill=color)
-    draw.rectangle((10, 8, 12, 16), fill=color)
-    draw.polygon((8, 15, 14, 15, 11, 21), fill=color)
-    draw.line((5, 10, 17, 10), fill=color, width=2)
-    return ImageTk.PhotoImage(image)
+
 
 
 def _slot_from_dict(data: dict) -> DailySlot:
@@ -504,11 +496,11 @@ class StickyWindow:
         self.tray = None
         self.drag_x = 0
         self.drag_y = 0
+        self.drag_active = False
         self.is_pinned = False
         self.locked_geometry: str | None = None
         self.restoring_geometry = False
         self.pointer_inside = True
-        self.pin_image = None
         self.task_canvas: tk.Canvas | None = None
 
         self.root.title(tr(self.db_path, "title"))
@@ -1293,12 +1285,10 @@ class StickyWindow:
         )
         date_label.pack(side="left", padx=(8, 0))
 
-        settings_btn = styled_button(header, text=tr(self.db_path, "settings"), width=8, command=self.open_settings)
-        settings_btn.pack(side="right")
-        self.pin_image = make_pin_photo(self.is_pinned)
+        pin_char = "📌" if self.is_pinned else "📍"
         pin_btn = tk.Button(
             header,
-            image=self.pin_image,
+            text=pin_char,
             command=self.toggle_pin,
             bg=COLORS["paper"],
             activebackground=COLORS["card"],
@@ -1306,9 +1296,13 @@ class StickyWindow:
             borderwidth=0,
             highlightthickness=0,
             cursor="hand2",
+            font=("Segoe UI Emoji", 12),
         )
-        pin_btn.pack(side="right", padx=(0, 6))
+        pin_btn.pack(side="right", padx=(0, 4))
         pin_btn.bind("<Enter>", lambda _event: self._handle_mouse_enter())
+
+        settings_btn = styled_button(header, text=tr(self.db_path, "settings"), width=8, command=self.open_settings)
+        settings_btn.pack(side="right")
 
         quote_frame = tk.Frame(self.root, bg=COLORS["card"], highlightbackground=COLORS["paper_dark"], highlightthickness=1)
         quote_frame.pack(fill="x", padx=12, pady=(4, 6))
@@ -1462,12 +1456,14 @@ class StickyWindow:
             return
         # Skip if click was on a button (Settings, Pin, Refresh, Review, etc.)
         if isinstance(event.widget, tk.Button):
+            self.drag_active = False
             return
+        self.drag_active = True
         self.drag_x = event.x
         self.drag_y = event.y
 
     def _drag(self, event):
-        if self.is_pinned:
+        if self.is_pinned or not self.drag_active:
             return
         x = self.root.winfo_pointerx() - self.drag_x
         y = self.root.winfo_pointery() - self.drag_y
