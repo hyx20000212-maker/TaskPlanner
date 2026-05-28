@@ -120,12 +120,28 @@ class DailyTracker:
         for t in tasks:
             task_map[t.id] = t
 
-        # Create check items with three tiers
+        # Create check items with three tiers (or binary for chores)
         check_items: list[TaskCheckItem] = []
         for t in tasks:
             alloc = alloc_map.get(t.id)
             base_amount = alloc.amount if alloc else t.min_daily_amount or 0
             efficiency = t.unit_efficiency if t.unit_efficiency > 0 else 1.0
+
+            if t.is_chore:
+                # Chores: binary complete, no tiers
+                check_items.append(TaskCheckItem(
+                    task_id=t.id,
+                    description=t.description,
+                    task_type=t.task_type,
+                    unit=t.unit,
+                    tier_min=base_amount,
+                    tier_ideal=base_amount,
+                    tier_challenge=base_amount,
+                    tier_min_hours=base_amount,
+                    tier_ideal_hours=base_amount,
+                    tier_challenge_hours=base_amount,
+                ))
+                continue
 
             # Three tiers around the base allocation
             tier_min = max(1, round(base_amount * 0.7, 0))

@@ -20,6 +20,10 @@ class TaskCheckItem:
     tier_challenge_hours: float = 0.0
     selected_tier: Optional[str] = None  # "min" / "ideal" / "challenge" / None
 
+    @property
+    def is_chore(self) -> bool:
+        return self.task_type == "chore"
+
     def to_dict(self) -> dict:
         return {
             "task_id": self.task_id,

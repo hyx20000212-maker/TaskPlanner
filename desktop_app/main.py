@@ -110,6 +110,8 @@ DESKTOP_TEXT = {
         "tier_min": "最低",
         "tier_ideal": "理想",
         "tier_challenge": "挑战",
+        "mark_done": "完成",
+        "done_check": "已完成",
         "confirm_delete_title": "确认删除",
         "confirm_delete_body": "确定要删除当前计划和今天的任务清单吗？\n历史打卡记录会保留。",
         "file_title": "选择任务文件",
@@ -178,6 +180,8 @@ DESKTOP_TEXT = {
         "tier_min": "Minimum",
         "tier_ideal": "Ideal",
         "tier_challenge": "Challenge",
+        "mark_done": "Done",
+        "done_check": "Completed",
         "confirm_delete_title": "Confirm Delete",
         "confirm_delete_body": "Delete the current plan and today's task list?\nHistory records will be kept.",
         "file_title": "Choose Task File",
@@ -1423,9 +1427,14 @@ class StickyWindow:
                 "ideal": tr(self.db_path, "tier_ideal"),
                 "challenge": tr(self.db_path, "tier_challenge"),
             }
+            display = labels.get(item.selected_tier, item.selected_tier)
+            if item.is_chore:
+                display = "\u2705 " + tr(self.db_path, "done_check")
+            else:
+                display = tr(self.db_path, "selected", tier=display)
             selected = tk.Label(
                 card,
-                text=tr(self.db_path, "selected", tier=labels.get(item.selected_tier, item.selected_tier)),
+                text=display,
                 bg=COLORS["card"],
                 fg=COLORS["green"],
                 anchor="w",
@@ -1434,6 +1443,17 @@ class StickyWindow:
             selected.pack(fill="x", padx=8, pady=(0, 8))
             return
 
+        # ── Chores: single "Complete" button ────────────────────────
+        if item.is_chore:
+            complete_btn = styled_button(
+                card,
+                text=tr(self.db_path, "mark_done"),
+                command=lambda task_id=item.task_id: self.select_tier(task_id, "challenge"),
+            )
+            complete_btn.pack(fill="x", padx=8, pady=(0, 8))
+            return
+
+        # ── Regular tasks: three-tier buttons ───────────────────────
         row = tk.Frame(card, bg=COLORS["card"])
         row.pack(fill="x", padx=8, pady=(0, 8))
         options = [

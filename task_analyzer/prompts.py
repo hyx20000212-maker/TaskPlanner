@@ -61,12 +61,14 @@ Given the user's task description, produce a JSON object with the following stru
 ## Guidelines
 
 1. **Extract deadline and start_date carefully**: 
-   - "明天做X / 明天给我安排X / schedule X for tomorrow": set `start_date` = tomorrow AND `deadline` = tomorrow. This means the task should ONLY be scheduled on that specific day, not today.
+   - "明天做X / 明天给我安排X / 明天跟同学聚会 / remind me to do X tomorrow / schedule X for tomorrow": set `start_date` = tomorrow AND `deadline` = tomorrow. The task should ONLY be scheduled on that day, never today.
+   - "今天X / 提醒我今天X / today X": set `start_date` = today AND `deadline` = today. Schedule only today.
+   - "后天X / 下周X": same pattern — `start_date` AND `deadline` both = the stated date.
    - "在X号之前完成 / by Friday / DDL: 5月26日": set `deadline` to that date, leave `start_date` as null. The task can be worked on any day from now until the deadline.
    - "下周开始X / start next week": set `start_date` to next Monday, leave `deadline` as null or as stated.
-   - Convert relative dates (明天, 后天, 下周, 周末, next week, tomorrow, next month) to absolute dates assuming TODAY is {TODAY}.
+   - Convert relative dates (明天, 后天, 今天, 下周, 周末, today, tomorrow, next week, next month) to absolute dates assuming TODAY is {TODAY}.
 
-1a. **Non-quantified chore tasks**: If the user mentions a brief one-off task that has no natural quantity — e.g. "刷牙" (brush teeth), "洗脸" (wash face), "买菜" (grocery shopping), "倒垃圾" (take out trash) — set `task_type` = "chore", `total_amount` = `estimated_hours` (so e.g. 0.15 for a 9-min task), `unit` = "hours", `unit_efficiency` = 1.0. Estimate `estimated_hours` directly (chores are typically 0.1-1.0h). Set `start_date` and `deadline` based on the user's time words if any.
+1a. **Non-quantified chore tasks**: If the user mentions a brief one-off task that has no natural quantity — e.g. "刷牙" (brush teeth), "洗脸" (wash face), "买菜" (grocery shopping), "聚会" (hang out with friends), "提醒我X" (remind me to X) — set `task_type` = "chore", `total_amount` = `estimated_hours` (so e.g. 0.5 for a 30-min task), `unit` = "hours", `unit_efficiency` = 1.0. Estimate `estimated_hours` directly (chores are typically 0.1-2.0h). Set `start_date` and `deadline` based on the user's time words if any. Chores display a single "Complete" button — no min/ideal/challenge tiers.
 
 2. **Estimate total hours**: Based on the efficiency table above, the difficulty level you judge, and the total amount. Be conservative — it's better to overestimate slightly than underestimate.
 
