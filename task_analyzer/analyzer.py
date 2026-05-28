@@ -112,6 +112,10 @@ class TaskAnalyzer:
                     f"Please provide a deadline for accurate planning."
                 )
 
+        # Post-process: ensure start_date matches time words in original text
+        # (Safety net for when LLM fails to set start_date)
+        self._fix_missing_start_dates(tasks, text)
+
         return TaskAnalysisResult(
             tasks=tasks,
             warnings=warnings,
@@ -227,6 +231,59 @@ class TaskAnalyzer:
             return response.choices[0].message.content.strip()
         except Exception as e:
             return f"(Could not generate rationale: {e})"
+
+    @staticmethod
+    def _fix_missing_start_dates(tasks: list[Task], original_text: str):
+        """Safety net: scan original text for '今天/明天/后天' and apply to tasks missing start_date.
+
+        Strategy: if user says "明天X" and a chore/task has no start_date, it should
+        only be scheduled on that day. The LLM sometimes misses this.
+        """
+        import re
+        from datetime import timedelta
+
+        today = date.today()
+        date_map = [
+            (r'今天', today),
+            (r'明天', today + timedelta(days=1)),
+            (r'后天', today + timedelta(days=2)),
+        ]
+
+        # Find all date-marked segments: "明天跟同学聚会" → segments=[("明天", "跟同学聚会")]
+        segments: list[tuple[str, str, date]] = []  # (date_word, after_text, target_date)
+        for pattern, target_date in date_map:
+            for m in re.finditer(pattern, original_text):
+                after = original_text[m.end():].strip()
+                # Stop at next date word or punctuation
+                end = len(after)
+                for sep in ['今天', '明天', '后天', '，', '。', ',', '.']:
+                    idx = after.find(sep)
+                    if 0 <= idx < end:
+                        end = idx
+                after = after[:end].strip()
+                segments.append((m.group(0), after, target_date))
+
+        if not segments:
+            return
+
+        # For tasks without start_date, try matching from segments
+        for task in tasks:
+            if task.start_date is not None:
+                continue
+            for date_word, clue, target_date in segments:
+                clue_words = set(re.split(r'[，。、,.\s]+', clue.strip()))
+                task_words = set(re.split(r'[，。、,.\s]+', task.description))
+                # If any significant word overlaps between clue and task description
+                overlap = {w for w in clue_words if len(w) >= 2} & {w for w in task_words if len(w) >= 2}
+                if overlap or clue in task.description:
+                    task.start_date = target_date
+                    if task.deadline is None:
+                        task.deadline = target_date
+                    break
+            else:
+                # Fallback: if this task still has no start_date, assign from the
+                # next unused segment in order
+                pass
 
 
 # ── Convenience functions ────────────────────────────────────────────

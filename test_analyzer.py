@@ -363,6 +363,43 @@ def test_chore_task():
     print("  PASS — chore task supports non-quantified short tasks")
 
 
+# ── Test 10: start_date safety net ─────────────────────────────────
+def test_start_date_safety_net():
+    """_fix_missing_start_dates assigns start_date from text time words."""
+    from datetime import date, timedelta
+    from task_analyzer.analyzer import TaskAnalyzer
+    from task_analyzer.models import Task
+
+    print("=" * 50)
+    print("Test 10: start_date safety net")
+
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    day_after = today + timedelta(days=2)
+
+    # Case 1: "明天跟同学聚会"
+    tasks = [
+        Task(id="t1", description="跟同学聚会", task_type="chore",
+             total_amount=1.0, unit="hours", difficulty=1, estimated_hours=1.0,
+             unit_efficiency=1.0, efficiency_unit="hours_per_hour"),
+    ]
+    TaskAnalyzer._fix_missing_start_dates(tasks, "提醒我今天买菜，明天跟同学聚会")
+    assert tasks[0].start_date == tomorrow
+    assert tasks[0].deadline == tomorrow
+
+    # Case 2: already has start_date — not overridden
+    tasks3 = [
+        Task(id="t3", description="聚会", task_type="chore",
+             total_amount=1.0, unit="hours", difficulty=1, estimated_hours=1.0,
+             unit_efficiency=1.0, efficiency_unit="hours_per_hour",
+             start_date=day_after, deadline=day_after),
+    ]
+    TaskAnalyzer._fix_missing_start_dates(tasks3, "明天聚会")
+    assert tasks3[0].start_date == day_after
+
+    print("  PASS — start_date safety net fixes LLM misses")
+
+
 # ── Test 8: Goal decomposition prompt building ──────────────────────
 def test_goal_prompts():
     """Goal decomposition and rationale prompts build correctly."""
@@ -409,6 +446,7 @@ if __name__ == "__main__":
     test_milestone_task()
     test_start_date()
     test_chore_task()
+    test_start_date_safety_net()
     test_goal_prompts()
     print("\n" + "=" * 50)
     print("All analyzer tests passed!")
