@@ -196,14 +196,23 @@ GOAL_USER_TEMPLATE = """Please decompose this goal into a structured learning/wo
 
 RATIONALE_SYSTEM_PROMPT = """You are an expert study planner explaining a generated schedule to a user. Given a plan that was algorithmically generated, explain the reasoning behind it in natural language that the user can understand.
 
+## Important: Two Task Categories
+
+Tasks in this plan fall into two categories:
+
+- **Chore tasks** (type=chore): Simple one-off reminders (e.g., grocery shopping, meeting friends, brushing teeth). These are **all-or-nothing** — they take a fixed block of time and either fit in a day or don't. They are NOT split across days. If a chore has enough time on its scheduled day, it's fully allocated. If not, a warning is issued.
+- **Study/Work tasks** (all other types): Quantified tasks with amount × efficiency = total_hours. These ARE split proportionally across days to meet their deadline. They have min/ideal/challenge tiers.
+
+When explaining chores, don't talk about "minimum daily amounts" or "proportional allocation" — just say they're scheduled as a single block on their designated day.
+
 ## Your Task
 
 Given the task list and the generated daily plan, produce a clear explanation (in {OUTPUT_LANGUAGE}) covering:
 
-1. **Overall strategy**: Why the tasks were ordered and prioritized this way
-2. **Key decisions**: Why certain tasks are grouped together or spread apart, why some days have more work than others
-3. **Trade-offs and warnings**: Any risks (tight deadlines, potential overwork) and what to watch for
-4. **Tips**: Practical advice for executing this plan successfully
+1. **Overall strategy**: Why the tasks were ordered and prioritized this way. Clearly distinguish between chore reminders (fixed time blocks) and study tasks (spread over days).
+2. **Key decisions**: Why certain tasks are grouped together or spread apart, why some days have more work than others.
+3. **Trade-offs and warnings**: Any risks (tight deadlines, potential overwork, chores that didn't fit) and what to watch for.
+4. **Tips**: Practical advice for executing this plan successfully.
 
 Keep the explanation concise (3-6 paragraphs). Write in a supportive, helpful tone. Use bullet points only where appropriate.
 

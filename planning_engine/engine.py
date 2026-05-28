@@ -283,12 +283,25 @@ class PlanningEngine:
         else:
             active = active_all
 
-        # Calculate proportional allocation
-        allocations = self._allocate_proportional(
-            active=active,
-            usable_hours=usable,
-            planning_date=date,
-        )
+        # ── Separate chores from quantified tasks ──────────────────
+        chores = [t for t in active if t.is_chore]
+        regular = [t for t in active if not t.is_chore]
+
+        # ── Chore allocation: all-or-nothing ───────────────────────
+        chore_allocs, chore_hours = self._allocate_chores(chores, usable, date)
+        remaining_usable = usable - chore_hours
+
+        # ── Regular tasks: proportional ────────────────────────────
+        if regular and remaining_usable > 0:
+            regular_allocs = self._allocate_proportional(
+                active=regular,
+                usable_hours=remaining_usable,
+                planning_date=date,
+            )
+        else:
+            regular_allocs = []
+
+        allocations = chore_allocs + regular_allocs
 
         # Apply allocations and update progress
         for alloc in allocations:
@@ -308,6 +321,42 @@ class PlanningEngine:
             available_hours=available_hours,
             allocations=allocations,
         )
+
+    def _allocate_chores(
+        self,
+        chores: list[Task],
+        usable_hours: float,
+        planning_date: date,
+    ) -> tuple[list[TaskAllocation], float]:
+        """Allocate chores as all-or-nothing — full estimated_hours or skip.
+
+        Returns (allocations, total_used_hours).
+        """
+        allocs: list[TaskAllocation] = []
+        used = 0.0
+        today = planning_date
+
+        for t in chores:
+            needed = t.estimated_hours if t.estimated_hours > 0 else 0.5
+            if used + needed <= usable_hours:
+                allocs.append(TaskAllocation(
+                    task_id=t.id,
+                    description=t.description,
+                    task_type=t.task_type,
+                    amount=needed,     # chore: amount == hours
+                    unit="hours",
+                    hours=needed,
+                    difficulty=t.difficulty,
+                ))
+                used += needed
+            else:
+                self.warnings.append(
+                    f"Chore '{t.description}' needs {needed:.1f}h but only "
+                    f"{usable_hours - used:.1f}h remaining on {today}. "
+                    f"Consider rescheduling or adding more free time."
+                )
+
+        return allocs, used
 
     def _allocate_proportional(
         self,
